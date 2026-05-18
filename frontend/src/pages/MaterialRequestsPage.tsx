@@ -1,37 +1,40 @@
-import { useState } from 'react';
-import { Button } from '../components/Button';
-import { Card } from '../components/Card';
-import { DataTable, type Column } from '../components/DataTable';
-import { Field, Input, Select, TextArea } from '../components/FormControls';
-import { Modal } from '../components/Modal';
-import { PageHeader } from '../components/PageHeader';
-import { StatusBadge } from '../components/StatusBadge';
-import { materialRequests, type MaterialRequestRecord } from '../services/mockData';
-
-const columns: Array<Column<MaterialRequestRecord>> = [
-  { key: 'number', header: 'Request', render: (row) => <span className="font-black text-slate-950">{row.number}</span> },
-  { key: 'project', header: 'Project / phase', render: (row) => <span>{row.project}<br /><span className="text-xs text-slate-500">{row.phase}</span></span> },
-  { key: 'needed', header: 'Needed', render: (row) => row.neededDate },
-  { key: 'priority', header: 'Priority', render: (row) => <StatusBadge status={row.priority} /> },
-  { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} /> },
-  { key: 'lines', header: 'Lines', render: (row) => row.lines.map((line) => `${line.item} (${line.quantity} ${line.unit})`).join(', ') },
-  { key: 'actions', header: 'Actions', render: (row) => <div className="flex flex-wrap gap-2"><Button variant="ghost">Approve</Button><Button variant="danger">Reject</Button>{row.status === 'APPROVED' ? <Button>Issue</Button> : null}</div> },
-];
+import { useMemo, useState } from 'react';
+import { Button } from '../components/ui/Button';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { DataTable, type Column } from '../components/ui/DataTable';
+import { Drawer } from '../components/ui/Drawer';
+import { Modal } from '../components/ui/Modal';
+import { PageHeader } from '../components/ui/PageHeader';
+import { StatusBadge } from '../components/ui/StatusBadge';
+import { Toast } from '../components/ui/Toast';
+import { useDemoStore } from '../hooks/useDemoStore';
+import { useToast } from '../hooks/useToast';
+import { approveMaterialRequest, createMaterialRequest, rejectMaterialRequest } from '../services/mockStore';
+import type { MaterialRequestRecord } from '../services/mockData';
 
 export function MaterialRequestsPage() {
-  const [status, setStatus] = useState('ALL');
-  const [modalOpen, setModalOpen] = useState(false);
-  const filtered = status === 'ALL' ? materialRequests : materialRequests.filter((request) => request.status === status);
+  const { state, reload } = useDemoStore();
+  const { toast, showSuccess, clear } = useToast();
+  const [tab, setTab] = useState('ALL');
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<MaterialRequestRecord | null>(null);
+  const [rejectId, setRejectId] = useState<string | null>(null);
+  const rows = useMemo(() => (state?.materialRequests ?? []).filter((r) => tab === 'ALL' || r.status === tab), [state, tab]);
 
-  return (
-    <div className="space-y-6">
-      <PageHeader eyebrow="Material Workflow" title="Requests, approvals and issue conversion" description="Site engineers request material by project phase; managers approve or reject; storekeepers convert approvals to stock issues." actions={<Button onClick={() => setModalOpen(true)}>Create request</Button>} />
-      <Card title="Status tabs"><div className="flex flex-wrap gap-2">{['ALL', 'SUBMITTED', 'APPROVED', 'PARTIALLY_ISSUED', 'ISSUED', 'REJECTED'].map((tab) => <Button key={tab} variant={status === tab ? 'primary' : 'ghost'} onClick={() => setStatus(tab)}>{tab.replace(/_/g, ' ')}</Button>)}</div></Card>
-      <DataTable columns={columns} data={filtered} getRowKey={(row) => row.id} />
-      <Modal open={modalOpen} title="Create material request" onClose={() => setModalOpen(false)}>
-        <div className="grid gap-4 md:grid-cols-2"><Field label="Project"><Select><option>Bole Residential Villa</option><option>Summit Warehouse Extension</option></Select></Field><Field label="Phase"><Select><option>Foundation</option><option>Structure</option><option>Electrical</option></Select></Field><Field label="Needed date"><Input type="date" /></Field><Field label="Priority"><Select><option>NORMAL</option><option>HIGH</option><option>URGENT</option></Select></Field></div>
-        <div className="mt-4"><Field label="Reason"><TextArea rows={4} placeholder="Explain construction activity and materials required." /></Field></div>
-      </Modal>
-    </div>
-  );
+  const cols: Array<Column<MaterialRequestRecord>> = [
+    { key: 'num', header: 'Request', render: (r) => <button className='font-bold text-orange-700' onClick={() => setView(r)}>{r.number}</button> },
+    { key: 'project', header: 'Project', render: (r) => r.project },
+    { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} /> },
+    { key: 'actions', header: 'Actions', render: (r) => <div className='flex gap-2'><Button variant='ghost' onClick={async () => { await approveMaterialRequest(r.id); showSuccess('Approved request.'); void reload(); }}>Approve</Button><Button variant='danger' onClick={() => setRejectId(r.id)}>Reject</Button></div> },
+  ];
+
+  return <div className='space-y-6'>
+    <PageHeader eyebrow='Material Requests' title='Approval and issue flow' description='Create, approve, reject and issue material requests.' actions={<Button onClick={() => setOpen(true)}>Create Request</Button>} />
+    <div className='flex flex-wrap gap-2'>{['ALL', 'SUBMITTED', 'APPROVED', 'PARTIALLY_ISSUED', 'ISSUED', 'REJECTED'].map((s) => <Button key={s} variant={tab === s ? 'primary' : 'ghost'} onClick={() => setTab(s)}>{s}</Button>)}</div>
+    <DataTable columns={cols} data={rows} getRowKey={(r) => r.id} />
+    <Modal open={open} title='Create Material Request' onClose={() => setOpen(false)}><Button onClick={async () => { await createMaterialRequest({ project: 'Bole Residential Villa', phase: 'Structure', requestedBy: 'Site Engineer', neededDate: new Date().toISOString().slice(0, 10), priority: 'NORMAL', reason: 'Demo request', lines: [{ item: 'Rebar 12mm', quantity: 40, unit: 'm' }] }); setOpen(false); showSuccess('Material request created.'); void reload(); }}>Submit request</Button></Modal>
+    <Drawer open={Boolean(view)} title={view?.number ?? ''} onClose={() => setView(null)}>{view ? <div className='space-y-2 text-sm'><p><b>Requested by:</b> {view.requestedBy}</p><p><b>Reason:</b> {view.reason}</p><p><b>Lines:</b> {view.lines.map((l) => `${l.item} (${l.quantity} ${l.unit})`).join(', ')}</p></div> : null}</Drawer>
+    <ConfirmDialog open={Boolean(rejectId)} title='Reject request?' message='This action marks the material request as rejected.' onCancel={() => setRejectId(null)} onConfirm={async () => { if (!rejectId) return; await rejectMaterialRequest(rejectId); setRejectId(null); showSuccess('Rejected request.'); void reload(); }} />
+    <Toast message={toast} onClose={clear} />
+  </div>;
 }
