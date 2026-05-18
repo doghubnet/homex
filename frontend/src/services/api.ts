@@ -1,4 +1,5 @@
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios';
+import { setRuntimeWarning } from './mockStore';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL?.trim() || 'http://localhost:3000/api';
 export const MOCKS_ENABLED = import.meta.env.VITE_ENABLE_MOCKS !== 'false';
@@ -62,22 +63,29 @@ function toApiError(error: unknown): ApiRequestError {
     }
 
     if (!axiosError.response) {
-      return new ApiRequestError('The Home-X API is unavailable. Demo data can still be used while the backend is offline.', status);
+      const msg = 'The Home-X API is unavailable. Demo data can still be used while the backend is offline.';
+      setRuntimeWarning(msg);
+      return new ApiRequestError(msg, status);
     }
 
-    return new ApiRequestError(`Home-X API request failed with status ${status}.`, status);
+    const msg = `Home-X API request failed with status ${status}.`;
+    setRuntimeWarning(msg);
+    return new ApiRequestError(msg, status);
   }
 
   if (error instanceof Error) {
+    setRuntimeWarning(error.message);
     return new ApiRequestError(error.message);
   }
 
+  setRuntimeWarning('An unexpected Home-X API error occurred.');
   return new ApiRequestError('An unexpected Home-X API error occurred.');
 }
 
 export async function apiGet<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
   try {
     const response = await api.get<T>(url, config);
+    setRuntimeWarning(null);
     return response.data;
   } catch (error) {
     throw toApiError(error);
@@ -87,6 +95,7 @@ export async function apiGet<T>(url: string, config?: AxiosRequestConfig): Promi
 export async function apiPost<TResponse, TPayload = unknown>(url: string, data?: TPayload, config?: AxiosRequestConfig): Promise<TResponse> {
   try {
     const response = await api.post<TResponse>(url, data, config);
+    setRuntimeWarning(null);
     return response.data;
   } catch (error) {
     throw toApiError(error);
@@ -96,6 +105,7 @@ export async function apiPost<TResponse, TPayload = unknown>(url: string, data?:
 export async function apiPut<TResponse, TPayload = unknown>(url: string, data?: TPayload, config?: AxiosRequestConfig): Promise<TResponse> {
   try {
     const response = await api.put<TResponse>(url, data, config);
+    setRuntimeWarning(null);
     return response.data;
   } catch (error) {
     throw toApiError(error);
@@ -105,6 +115,7 @@ export async function apiPut<TResponse, TPayload = unknown>(url: string, data?: 
 export async function apiDelete<TResponse>(url: string, config?: AxiosRequestConfig): Promise<TResponse> {
   try {
     const response = await api.delete<TResponse>(url, config);
+    setRuntimeWarning(null);
     return response.data;
   } catch (error) {
     throw toApiError(error);
